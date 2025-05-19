@@ -6,24 +6,10 @@ const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 const cors = require("cors");
-const fs = require('fs');
-const path = require('path');
-
-const templatePath = path.join(__dirname, 'templates', 'resume-template.html');
-
-const templateHtml = fs.readFileSync(templatePath, 'utf-8');
-
+const fs = require("fs");
+const path = require("path");
 
 const upload = multer({ storage: multer.memoryStorage() });
-
-function extractSection(html, sectionClass) {
-  // Example: Looks for <section class="summary">content</section> pattern
-  const regex = new RegExp(`<section class="${sectionClass}">([\\s\\S]*?)<\/section>`, 'i');
-  const match = html.match(regex);
-  return match ? match[1].trim() : '';
-}
-
-app.use(cors());
 
 app.use(
   cors({
@@ -36,11 +22,14 @@ app.use(express.json());
 // Gemini setup
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
+  apiEndpoint: "https://gemini.googleapis.com",
+  temperature: 0.5,
 });
 
 app.get("/", (req, res) => {
   res.send("Welcome to the Resume Generator API!");
 });
+
 // POST /generate-pdf
 app.post("/generate-pdf", upload.single("resume"), async (req, res) => {
   const { name, email, web_link, linkedin, jobTarget, jobDescription, mode } =
@@ -53,8 +42,7 @@ app.post("/generate-pdf", upload.single("resume"), async (req, res) => {
 
     if (mode === "build") {
       userPrompt = `
-You are a resume generator. Build a resume using the following:
-
+Generate a professional resume in HTML format for:
 Name: ${name}
 Email: ${email}
 Web Link: ${web_link}
@@ -63,7 +51,14 @@ LinkedIn: ${linkedin}
 Job Target: ${jobTarget}
 Job Description: ${jobDescription}
 
-Return a clean, HTML-formatted resume. No commentary.
+Create a complete HTML document with proper styling. Include:
+1. Name and contact information at the top
+2. Professional summary section
+3. Work experience section with bullet points for responsibilities/achievements
+4. Skills section
+5. Education section
+
+Use clean, professional styling with good spacing. The HTML should be ready to render as a PDF.
 `;
 
       contents = [
@@ -76,22 +71,18 @@ Return a clean, HTML-formatted resume. No commentary.
       const base64 = resumeFile.buffer.toString("base64");
 
       userPrompt = `
-You are a resume optimization tool. Refine and tailor the uploaded resume to match the job description.
-Return a clean HTML resume. Do not include explanations.
+Refine and rewrite the uploaded resume to better match this job description:
 
-Return the following resume sections as clean inline HTML:
+${jobDescription}
 
-    Summary
+Return a complete HTML document with professional styling. Make sure to:
+1. Tailor the summary and all other sections to match the job description.
+2. Do not give any explanations or comments, only modify where necessary.
+3. Ensure that many things are changed to make it more relevant to the job description.
+4. Try to keep the same structure as the original resume in terms of looks.
+5. If there are metrics in the original resume, ensure to keep them if they would be releveant to the job description.
 
-    Experience
-
-    Skills
-
-    Education
-
-Only return HTML fragments for each section, no wrapping <html> or <body> tags.
-
-Job Description: ${jobDescription}`;
+`;
 
       contents = [
         {
@@ -110,45 +101,78 @@ Job Description: ${jobDescription}`;
     } else {
       return res.status(400).json({ error: "Invalid mode or missing data." });
     }
+
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
-
       contents: contents,
     });
 
-    const raw = response.text;
-    const generatedHtml = raw.replace(/^```html\s*/i, "").replace(/```$/, "");
+    const rawHtml = response.text;
 
-    // Parse the generated HTML into sections (you may need to adjust this based on AI's output format)
-    const summaryHtml = extractSection(generatedHtml, 'summary');
-    const experienceHtml = extractSection(generatedHtml, 'experience');
-    const skillsHtml = extractSection(generatedHtml, 'skills');
-    const educationHtml = extractSection(generatedHtml, 'education');
+    // Clean up any code blocks in the response
+    let finalHtml = rawHtml;
+    if (rawHtml.includes("```html")) {
+      finalHtml = rawHtml.replace(/```html\s*/i, "").replace(/```\s*$/, "");
+    }
 
-    // Now apply to template
-    const finalHtml = templateHtml
-      .replace('{{NAME}}', name || '')
-      .replace('{{EMAIL}}', email || '')
-      .replace('{{LINKEDIN}}', linkedin || '')
-      .replace('{{WEB_LINK}}', web_link || '')
-      .replace('{{SUMMARY_HTML}}', summaryHtml || '')
-      .replace('{{EXPERIENCE_HTML}}', experienceHtml || '')
-      .replace('{{SKILLS_HTML}}', skillsHtml || '')
-      .replace('{{EDUCATION_HTML}}', educationHtml || '');
+    // If the AI didn't return a full HTML document, add the basic structure
+    if (!finalHtml.includes("<!DOCTYPE html>")) {
+      finalHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: 'Arial', 'Helvetica', sans-serif;
+      margin: 0;
+      padding: 0;
+      color: #333;
+      line-height: 1.1;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 { font-size: 24px; margin-bottom: 5px; }
+    h2 { font-size: 18px; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 25px; }
+    h3 { font-size: 16px; margin-bottom: 0; }
+    .contact-info { font-size: 14px; color: #555; margin-bottom: 25px; }
+    .job { margin-bottom: 20px; }
+    .job-meta { font-style: italic; color: #666; margin-bottom: 10px; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    ${finalHtml}
+  </div>
+</body>
+</html>`;
+    }
 
-    const browser = await puppeteer.launch();
+    // Launch puppeteer
+    const browser = await puppeteer.launch({ headless: "new" });
     const page = await browser.newPage();
-    await page.setContent(finalHtml, { waitUntil: 'networkidle0' });
 
+    // Set content with specific viewport
+    await page.setViewport({ width: 850, height: 1100 });
+    await page.setContent(finalHtml, { waitUntil: "networkidle0" });
+
+    // Generate PDF with specific settings for better control
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
       margin: { top: "0.75in", bottom: "0.75in", left: "1in", right: "1in" },
-      displayHeaderFooter: false, // or true to add your own
+      preferCSSPageSize: true,
+      displayHeaderFooter: false,
     });
 
     await browser.close();
 
+    // Send the PDF
     res.set({
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${name || "resume"}.pdf"`,
@@ -157,7 +181,9 @@ Job Description: ${jobDescription}`;
     res.send(pdf);
   } catch (err) {
     console.error("Error:", err);
-    res.status(500).json({ error: "Failed to generate PDF" });
+    res
+      .status(500)
+      .json({ error: "Failed to generate PDF", details: err.message });
   }
 });
 
