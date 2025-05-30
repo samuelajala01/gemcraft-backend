@@ -1,8 +1,9 @@
 
-const express = require("express");
-const multer = require("multer");
-const puppeteer = require("puppeteer");
-const { GoogleGenAI } = require("@google/genai");
+import express from "express";
+import multer from "multer";
+import puppeteer from "puppeteer";
+
+import { GoogleGenAI } from "@google/genai";
 
  const browser = await puppeteer.launch({
     headless: true,
