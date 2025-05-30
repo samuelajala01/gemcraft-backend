@@ -1,4 +1,4 @@
-require("dotenv").config();
+
 const express = require("express");
 const multer = require("multer");
 const puppeteer = require("puppeteer");
@@ -11,7 +11,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(
   cors({
-    origin: "http://localhost:5173", 
+    origin: ["http://localhost:5173", "https://gemcraft.vercel.app"],
   })
 );
 
@@ -19,7 +19,7 @@ app.use(express.json());
 
 // Gemini setup
 const ai = new GoogleGenAI({
-  apiKey: '',
+  apiKey: process.env.GEMINI_API_KEY,
   temperature: 0,
 });
 
@@ -27,8 +27,9 @@ app.get("/", (req, res) => {
   res.send("Welcome to the Resume Generator API!");
 });
 
-// POST /generate-pdf
-app.post("/generate-pdf", upload.single("resume"), async (req, res) => {
+// Replace the problematic section in your /refine-pdf endpoint
+
+app.post("/refine-pdf", upload.single("resume"), async (req, res) => {
   const { name, email, web_link, linkedin, jobTarget, jobDescription, mode } =
     req.body;
   const resumeFile = req.file;
@@ -53,7 +54,7 @@ JOB DESCRIPTION TO MATCH:
 ${jobDescription}
 
 REQUIREMENTS:
-1. Create a complete HTML document with inline CSS
+1. Create a complete HTML document with inline CSS - MUST include <!DOCTYPE html>, <html>, <head>, and <body> tags
 2. Use ONLY black text on white background - no colors except black/gray
 3. Professional, clean layout optimized for ATS scanning
 4. Include these sections in order:
@@ -70,6 +71,7 @@ REQUIREMENTS:
 8. Keywords from job description naturally integrated
 9. No tables for layout - use divs and CSS
 10. Ensure content is relevant and realistic for the target role
+11. Add proper page margins and spacing for PDF generation
 
 Return ONLY the complete HTML document. No explanations, no markdown, no code blocks.`;
 
@@ -98,12 +100,13 @@ REQUIREMENTS:
    - Maintain professional experience chronology but enhance relevance
 
 3. FORMATTING REQUIREMENTS:
-   - Return complete HTML document with inline CSS
+   - Return complete HTML document with inline CSS - MUST include <!DOCTYPE html>, <html>, <head>, and <body> tags
    - Use ONLY black text on white background (no colors)
    - Professional ATS-friendly layout
    - Clean typography with Arial/Helvetica fonts
    - Proper spacing and hierarchy
    - No tables for layout
+   - Add proper page margins and spacing for PDF generation
 
 4. CONTENT OPTIMIZATION:
    - Integrate keywords from job description naturally
@@ -141,18 +144,20 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
 
     let rawHtml = response.text;
 
+    // Clean up the response
     rawHtml = rawHtml.replace(/```html\s*/gi, "").replace(/```\s*$/g, "");
     rawHtml = rawHtml.replace(/```/g, "");
     rawHtml = rawHtml.trim();
 
     let finalHtml = rawHtml;
 
+    // Check if it's a complete HTML document
     const hasDoctype = finalHtml.toLowerCase().includes("<!doctype html>");
     const hasHtmlTag = finalHtml.toLowerCase().includes("<html");
     const hasHeadTag = finalHtml.toLowerCase().includes("<head");
     const hasBodyTag = finalHtml.toLowerCase().includes("<body");
 
-
+    // FIXED: Only wrap if it's NOT a complete HTML document
     if (!hasDoctype || !hasHtmlTag || !hasHeadTag || !hasBodyTag) {
       finalHtml = `
 <!DOCTYPE html>
@@ -160,23 +165,21 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Resume - ${name || 'Professional Resume'}</title>
+  <title>Resume - ${name || "Professional Resume"}</title>
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
     body {
       font-family: Arial, Helvetica, sans-serif;
       line-height: 1.4;
       color: #000000;
       background: white;
       font-size: 11pt;
-      margin: 0;
-      padding: 0;
-    }
-    
-    .container {
-      max-width: 8.5in;
-      margin: 0 auto;
       padding: 0.75in;
-      background: white;
     }
     
     .header {
@@ -286,49 +289,54 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
     }
     
     @media print {
-      body { font-size: 10pt; }
-      .container { padding: 0.5in; }
+      body { 
+        font-size: 10pt;
+        padding: 0.5in;
+      }
       * { -webkit-print-color-adjust: exact !important; }
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    ${finalHtml}
-  </div>
+  ${finalHtml}
 </body>
 </html>`;
     }
 
-    // Launch puppeteer with better settings
-    const browser = await puppeteer.launch({ 
+    // FIXED: Launch puppeteer with better settings and no extra margins
+    const browser = await puppeteer.launch({
       headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        "--no-sandbox", 
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ],
     });
     const page = await browser.newPage();
 
     // Set content with better options
-    await page.setContent(finalHtml, { 
+    await page.setContent(finalHtml, {
       waitUntil: "networkidle0",
-      timeout: 30000 
+      timeout: 30000,
     });
 
-    // Wait a bit more for fonts and styles to load
-    await page.evaluateHandle('document.fonts.ready');
+    // Wait for fonts and styles to load
+    await page.evaluateHandle("document.fonts.ready");
 
-    // Generate PDF with better settings
+    // FIXED: Generate PDF with optimized settings - reduced margins
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
-      margin: { 
-        top: "0.5in", 
-        bottom: "0.5in", 
-        left: "0.75in", 
-        right: "0.75in" 
+      margin: {
+        top: "0.25in",    // Reduced from 0.5in
+        bottom: "0.25in", // Reduced from 0.5in
+        left: "0.25in",   // Reduced from 0.75in
+        right: "0.25in",  // Reduced from 0.75in
       },
       preferCSSPageSize: false,
       displayHeaderFooter: false,
-      scale: 0.9, // Slightly reduce scale to ensure content fits
+      scale: 1.0,  // Changed from 0.9 to 1.0 for better sizing
     });
 
     await browser.close();
@@ -336,7 +344,9 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
     // Send the PDF
     res.set({
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${name ? name.replace(/[^a-zA-Z0-9]/g, '_') : "resume"}.pdf"`,
+      "Content-Disposition": `attachment; filename="${
+        name ? name.replace(/[^a-zA-Z0-9]/g, "_") : "resume"
+      }.pdf"`,
     });
 
     res.send(pdf);
@@ -345,6 +355,277 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
     res
       .status(500)
       .json({ error: "Failed to generate PDF", details: err.message });
+  }
+});
+
+// Replace your existing extract-info endpoint with this improved version
+app.post("/extract-info", async (req, res) => {
+  const { message, currentData } = req.body;
+
+  try {
+    const extractPrompt = `
+You are an expert resume information extractor. Analyze the user's conversational message and extract structured information.
+
+CURRENT DATA: ${JSON.stringify(currentData, null, 2)}
+
+USER MESSAGE: "${message}"
+
+Extract and return ONLY the NEW information from this message in JSON format. Be smart about understanding context:
+
+Rules:
+1. If user mentions their name in any form ("I'm John", "My name is...", "John Smith here"), extract it
+2. Extract emails, phone numbers, LinkedIn URLs, websites automatically
+3. For job titles: look for "I'm applying for...", "I want to be...", "targeting...", etc.
+4. For experience: understand phrases like "I worked at...", "My last job was...", "I was a..."
+5. For skills: extract technical skills, programming languages, tools mentioned
+6. For education: look for degrees, schools, graduation years
+7. If they're describing job responsibilities, categorize as experience
+8. Be contextually aware - if they're answering a question about skills, treat the response as skills
+
+Return JSON with these exact fields (only include fields with new data):
+{
+  "personalInfo": {
+    "name": "Full Name",
+    "email": "email@example.com",
+    "phone": "+1234567890",
+    "linkedin": "linkedin-url",
+    "website": "website-url"
+  },
+  "jobTarget": "Specific job title/role",
+  "jobDescription": "Full job description text",
+  "experience": [
+    {
+      "title": "Job Title",
+      "company": "Company Name",
+      "duration": "Time period",
+      "achievements": ["Achievement 1", "Achievement 2"]
+    }
+  ],
+  "skills": ["skill1", "skill2", "skill3"],
+  "education": [
+    {
+      "degree": "Degree Name",
+      "school": "School Name", 
+      "year": "Graduation Year"
+    }
+  ]
+}
+
+Examples:
+- "Hi, I'm Sarah Johnson, sarah.j@email.com" → {"personalInfo": {"name": "Sarah Johnson", "email": "sarah.j@email.com"}}
+- "I'm targeting software engineer roles" → {"jobTarget": "Software Engineer"}
+- "I worked at Google as a developer for 2 years doing React and Node.js" → {"experience": [{"title": "Developer", "company": "Google", "duration": "2 years"}], "skills": ["React", "Node.js"]}
+- "I have Python, JavaScript, and SQL experience" → {"skills": ["Python", "JavaScript", "SQL"]}
+
+Return ONLY valid JSON, no explanations or formatting.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: extractPrompt }],
+        },
+      ],
+    });
+
+    let extractedJson = response.text.trim();
+
+    // Clean up the response
+    extractedJson = extractedJson
+      .replace(/```json\s*/gi, "")
+      .replace(/```\s*$/g, "");
+    extractedJson = extractedJson.replace(/```/g, "").trim();
+
+    try {
+      const extractedData = JSON.parse(extractedJson);
+      console.log("Extracted data:", extractedData); // For debugging
+      res.json({ success: true, data: extractedData });
+    } catch (parseError) {
+      console.error("Parse error:", parseError, "Raw response:", extractedJson);
+      res.json({ success: false, error: "Could not parse extracted data" });
+    }
+  } catch (error) {
+    console.error("Extraction error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Replace your existing generate-next-question endpoint with this improved version
+app.post("/generate-next-question", async (req, res) => {
+  const { currentData, conversationHistory } = req.body;
+  try {
+    const questionPrompt = `
+You are a friendly, professional resume building assistant. Based on the collected data and conversation flow, generate the next logical question.
+
+CURRENT DATA: ${JSON.stringify(currentData, null, 2)}
+RECENT CONVERSATION: ${JSON.stringify(conversationHistory.slice(-3), null, 2)}
+
+QUESTION GENERATION RULES:
+1. Follow this priority order:
+   - Basic info (name, email) - CRITICAL
+   - Job target/role they want - CRITICAL  
+   - Job description (if they have a specific job) - IMPORTANT
+   - Work experience - CRITICAL
+   - Education - IMPORTANT
+   - Skills - IMPORTANT
+   - Additional sections (certifications, projects, etc.) - NICE TO HAVE
+
+2. Be conversational and encouraging
+3. Ask ONE specific question at a time
+4. If they have basic info + job target + some experience/skills, offer to generate resume
+5. Make questions feel natural, not like a form
+
+DECISION LOGIC:
+- No name/email? → Ask for basic contact info
+- No job target? → Ask what role they're targeting
+- No job description but have target? → Ask if they have a specific job posting
+- No experience but have target? → Ask about their most relevant work experience
+- No education? → Ask about their education background
+- Few skills mentioned? → Ask about their key skills
+- Have all basics? → Offer to generate or ask about additional info
+
+RESPONSE FORMAT:
+Return a JSON object with:
+{
+  "question": "The next question to ask (conversational tone)",
+  "context": "Brief explanation of why this question is being asked",
+  "stage": "current_stage" (basic_info|job_target|experience|education|skills|additional|ready_to_generate),
+  "isComplete": false|true,
+  "suggestion": "Optional helpful suggestion or encouragement"
+}
+
+EXAMPLES:
+- If missing name: {"question": "Let's start with the basics - what's your full name?", "context": "Need basic contact information", "stage": "basic_info", "isComplete": false}
+- If have basics but no job target: {"question": "What type of role are you looking to apply for?", "context": "Understanding job target helps tailor the resume", "stage": "job_target", "isComplete": false}
+- If ready to generate: {"question": "Great! I have enough information to create your resume. Would you like me to generate it now, or is there anything else you'd like to add?", "context": "All essential information collected", "stage": "ready_to_generate", "isComplete": true}
+
+Generate your response now:`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: questionPrompt }],
+      temperature: 0.7,
+      max_tokens: 300,
+    });
+
+    const aiResponse = response.choices[0].message.content.trim();
+
+    // Parse the AI response as JSON
+    let questionData;
+    try {
+      questionData = JSON.parse(aiResponse);
+    } catch (parseError) {
+      // Fallback if AI doesn't return valid JSON
+      questionData = {
+        question: aiResponse,
+        context: "Continuing resume building process",
+        stage: "unknown",
+        isComplete: false,
+      };
+    }
+
+    res.json({
+      success: true,
+      data: questionData,
+    });
+  } catch (error) {
+    console.error("Error generating next question:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to generate next question",
+      fallback: {
+        question: "Could you tell me more about your work experience?",
+        context: "Collecting work experience information",
+        stage: "experience",
+        isComplete: false,
+      },
+    });
+  }
+});
+
+// POST /build-from-chat - Generate resume from chat-extracted data
+app.post("/build-from-chat", async (req, res) => {
+  const { extractedData } = req.body;
+
+  try {
+    const buildPrompt = `
+You are a professional resume builder. Create a complete, ATS-friendly HTML resume using this extracted data:
+
+${JSON.stringify(extractedData, null, 2)}
+
+REQUIREMENTS:
+1. Create a complete HTML document with inline CSS
+2. Use ONLY black text on white background - no colors except black/gray
+3. Professional, clean layout optimized for ATS scanning
+4. Include relevant sections based on available data
+5. Fill in realistic details where data is sparse but keep it professional
+6. Use professional fonts (Arial, Helvetica)
+7. Proper spacing and hierarchy
+8. Keywords naturally integrated
+9. No tables for layout - use divs and CSS
+
+Return ONLY the complete HTML document. No explanations, no markdown, no code blocks.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: buildPrompt }],
+        },
+      ],
+    });
+
+    let rawHtml = response.text;
+    rawHtml = rawHtml.replace(/```html\s*/gi, "").replace(/```\s*$/g, "");
+    rawHtml = rawHtml.replace(/```/g, "");
+    rawHtml = rawHtml.trim();
+
+    // Generate PDF using existing logic
+    const browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    const page = await browser.newPage();
+
+    await page.setContent(rawHtml, {
+      waitUntil: "networkidle0",
+      timeout: 30000,
+    });
+
+    await page.evaluateHandle("document.fonts.ready");
+
+    const pdf = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: {
+        top: "0.5in",
+        bottom: "0.5in",
+        left: "0.75in",
+        right: "0.75in",
+      },
+      preferCSSPageSize: false,
+      displayHeaderFooter: false,
+      scale: 0.9,
+    });
+
+    await browser.close();
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${
+        extractedData.personalInfo?.name?.replace(/[^a-zA-Z0-9]/g, "_") ||
+        "resume"
+      }.pdf"`,
+    });
+
+    res.send(pdf);
+  } catch (error) {
+    console.error("Build error:", error);
+    res
+      .status(500)
+      .json({ error: "Failed to generate resume", details: error.message });
   }
 });
 
