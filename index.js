@@ -1,7 +1,7 @@
-
 import express from "express";
 import multer from "multer";
 import puppeteer from "puppeteer";
+import cors from "cors"
 
 import { GoogleGenAI } from "@google/genai";
 
@@ -11,7 +11,6 @@ import { GoogleGenAI } from "@google/genai";
   });
 
 const app = express();
-const cors = require("cors");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
