@@ -1,8 +1,14 @@
 
-const express = require("express");
-const multer = require("multer");
-const puppeteer = require("puppeteer");
-const { GoogleGenAI } = require("@google/genai");
+import express from "express";
+import multer from "multer";
+import puppeteer from "puppeteer";
+
+import { GoogleGenAI } from "@google/genai";
+
+ const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
 
 const app = express();
 const cors = require("cors");
@@ -150,13 +156,11 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
 
     let finalHtml = rawHtml;
 
-    // Check if it's a complete HTML document
     const hasDoctype = finalHtml.toLowerCase().includes("<!doctype html>");
     const hasHtmlTag = finalHtml.toLowerCase().includes("<html");
     const hasHeadTag = finalHtml.toLowerCase().includes("<head");
     const hasBodyTag = finalHtml.toLowerCase().includes("<body");
 
-    // Only wrap if it's NOT a complete HTML document
     if (!hasDoctype || !hasHtmlTag || !hasHeadTag || !hasBodyTag) {
       finalHtml = `
 <!DOCTYPE html>
@@ -302,7 +306,7 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
 </html>`;
     }
 
-    // FIXED: Launch puppeteer with better settings and no extra margins
+
     const browser = await puppeteer.launch({
       headless: "new",
       args: [
@@ -314,23 +318,20 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
     });
     const page = await browser.newPage();
 
-    // Set content with better options
     await page.setContent(finalHtml, {
       waitUntil: "networkidle0",
       timeout: 30000,
     });
 
-    // Wait for fonts and styles to load
     await page.evaluateHandle("document.fonts.ready");
 
-    //Generate PDF with optimized settings - reduced margins
     const pdf = await page.pdf({
       format: "A4",
       printBackground: true,
       margin: {
         top: "0.25in", 
-        bottom: "0.25in",
-        left: "0.25in",
+        bottom: "0.25in", 
+        left: "0.25in",   
         right: "0.25in",  
       },
       preferCSSPageSize: false,
@@ -448,6 +449,7 @@ Return ONLY valid JSON, no explanations or formatting.`;
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
 
 app.post("/generate-next-question", async (req, res) => {
   const { currentData, conversationHistory } = req.body;
