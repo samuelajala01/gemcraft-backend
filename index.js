@@ -1,16 +1,17 @@
 import express from "express";
 import multer from "multer";
 import puppeteer from "puppeteer";
-import cors from "cors"
+import cors from "cors";
 
 import { GoogleGenAI } from "@google/genai";
 
- const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+const browser = await puppeteer.launch({
+  headless: true,
+  args: ["--no-sandbox", "--disable-setuid-sandbox"],
+});
 
 const app = express();
+app.use(express.json());
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -31,7 +32,6 @@ const ai = new GoogleGenAI({
 app.get("/", (req, res) => {
   res.send("Welcome to the Resume Generator API!");
 });
-
 
 app.post("/refine-pdf", upload.single("resume"), async (req, res) => {
   const { name, email, web_link, linkedin, jobTarget, jobDescription, mode } =
@@ -305,14 +305,13 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
 </html>`;
     }
 
-
     const browser = await puppeteer.launch({
       headless: "new",
       args: [
-        "--no-sandbox", 
+        "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
-        "--disable-gpu"
+        "--disable-gpu",
       ],
     });
     const page = await browser.newPage();
@@ -328,14 +327,14 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
       format: "A4",
       printBackground: true,
       margin: {
-        top: "0.25in", 
-        bottom: "0.25in", 
-        left: "0.25in",   
-        right: "0.25in",  
+        top: "0.25in",
+        bottom: "0.25in",
+        left: "0.25in",
+        right: "0.25in",
       },
       preferCSSPageSize: false,
       displayHeaderFooter: false,
-      scale: 1.0,  
+      scale: 1.0,
     });
 
     await browser.close();
@@ -449,7 +448,6 @@ Return ONLY valid JSON, no explanations or formatting.`;
   }
 });
 
-
 app.post("/generate-next-question", async (req, res) => {
   const { currentData, conversationHistory } = req.body;
   try {
@@ -500,13 +498,10 @@ EXAMPLES:
 
 Generate your response now:`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [{ role: "user", content: questionPrompt }],
-      temperature: 0.7,
-      max_tokens: 300,
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: contents,
     });
-
     const aiResponse = response.choices[0].message.content.trim();
 
     // Parse the AI response as JSON
