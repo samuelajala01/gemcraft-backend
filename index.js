@@ -17,7 +17,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "https://gemcraft.vercel.app"],
+    origin: ["http://localhost:3000", "https://gemcraft.vercel.app"],
   })
 );
 
@@ -85,7 +85,11 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
           parts: [{ text: userPrompt }],
         },
       ];
-    } else if (mode === "refine" && resumeFile) {
+    } else if (mode === "refine") {
+      if (!resumeFile) {
+        return res.status(400).json({ error: "Resume file is required for refine mode" });
+      }
+
       const base64 = resumeFile.buffer.toString("base64");
 
       userPrompt = `
@@ -355,7 +359,6 @@ Return ONLY the complete HTML document. No explanations, no markdown, no code bl
       .json({ error: "Failed to generate PDF", details: err.message });
   }
 });
-
 app.post("/extract-info", async (req, res) => {
   const { message, currentData } = req.body;
 
